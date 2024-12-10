@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  ollama-webui:
+    image: ghcr.io/oslook/ollama-webui:latest
+    # 如果要从本地构建，取消下面这行的注释
+    # build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    networks:
+      - ollama-network
+
+  # 可选：如果你想在同一个 compose 文件中运行 Ollama 服务
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - ollama-network
+
+volumes:
+  ollama-data:
+
+networks:
+  ollama-network:
+    driver: bridge 
