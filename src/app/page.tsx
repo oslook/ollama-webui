@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
 import ChatMessage from './components/ChatMessage';
 import ModelSelector from './components/ModelSelector';
@@ -20,6 +20,7 @@ const getSavedUrl = () => {
 const generateId = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -29,27 +30,33 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [streamingMessage, setStreamingMessage] = useState('');
 
-  // 从localStorage加载会话
+  // 初始化加载
   useEffect(() => {
+    setMounted(true);
     const savedConversations = localStorage.getItem('conversations');
     if (savedConversations) {
-      const parsed = JSON.parse(savedConversations);
-      setConversations(parsed);
-      // 如果有会话，选择最新的一个
-      if (parsed.length > 0) {
-        setCurrentConversationId(parsed[0].id);
+      try {
+        const parsed = JSON.parse(savedConversations);
+        setConversations(parsed);
+        if (parsed.length > 0) {
+          setCurrentConversationId(parsed[0].id);
+        }
+      } catch (e) {
+        console.error('Failed to parse saved conversations:', e);
       }
     }
   }, []);
 
   // 保存会话到localStorage
   useEffect(() => {
-    localStorage.setItem('conversations', JSON.stringify(conversations));
-  }, [conversations]);
+    if (mounted) {
+      localStorage.setItem('conversations', JSON.stringify(conversations));
+    }
+  }, [conversations, mounted]);
 
   const currentConversation = conversations.find(c => c.id === currentConversationId);
 
-  const handleNewConversation = () => {
+  const handleNewConversation = useCallback(() => {
     const newConversation: Conversation = {
       id: generateId(),
       title: 'New Chat',
@@ -60,22 +67,22 @@ export default function Home() {
     };
     setConversations(prev => [newConversation, ...prev]);
     setCurrentConversationId(newConversation.id);
-  };
+  }, [selectedModel]);
 
-  const handleDeleteConversation = (id: string) => {
+  const handleDeleteConversation = useCallback((id: string) => {
     setConversations(prev => prev.filter(c => c.id !== id));
     if (currentConversationId === id) {
       const remaining = conversations.filter(c => c.id !== id);
       setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
     }
-  };
+  }, [currentConversationId, conversations]);
 
-  const handleUrlChange = (newUrl: string) => {
+  const handleUrlChange = useCallback((newUrl: string) => {
     setBaseUrl(newUrl);
     localStorage.setItem('ollamaUrl', newUrl);
-  };
+  }, []);
 
-  const updateConversationTitle = (id: string, firstMessage: string) => {
+  const updateConversationTitle = useCallback((id: string, firstMessage: string) => {
     setConversations(prev => prev.map(conv => {
       if (conv.id === id) {
         return {
@@ -86,26 +93,23 @@ export default function Home() {
       }
       return conv;
     }));
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !selectedModel) return;
+    if (!input.trim() || !selectedModel || loading) return;
 
-    // 如果没有当前会话，创建一个新的
     if (!currentConversationId) {
       handleNewConversation();
-      return; // 等待下一个渲染周期再发送消息
+      return;
     }
 
     const newMessage: Message = { role: 'user', content: input };
     const currentMessages = currentConversation?.messages || [];
     
-    // 更新会话，添加用户消息
     setConversations(prev => prev.map(conv => {
       if (conv.id === currentConversationId) {
         const updatedMessages = [...conv.messages, newMessage];
-        // 如果是第一条消息，更新会话标题
         if (conv.messages.length === 0) {
           updateConversationTitle(conv.id, input);
         }
@@ -137,18 +141,15 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Server response error:', response.status, errorText);
-        throw new Error(`Server error: ${response.status} ${errorText}`);
+        throw new Error(`Server error: ${response.status}`);
       }
 
       const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
       if (!reader) {
         throw new Error('Failed to read response');
       }
 
+      const decoder = new TextDecoder();
       let accumulatedMessage = '';
 
       while (true) {
@@ -173,18 +174,12 @@ export default function Home() {
         }
       }
 
-      // 流式响应结束，更新会话
       if (accumulatedMessage) {
-        const assistantMessage: Message = {
-          role: 'assistant',
-          content: accumulatedMessage
-        };
-
         setConversations(prev => prev.map(conv => {
           if (conv.id === currentConversationId) {
             return {
               ...conv,
-              messages: [...conv.messages, assistantMessage],
+              messages: [...conv.messages, { role: 'assistant', content: accumulatedMessage }],
               updatedAt: new Date().toISOString()
             };
           }
@@ -200,25 +195,22 @@ export default function Home() {
     }
   };
 
-  // 获取当前要显示的所有消息，包括流式消息
   const displayMessages = currentConversation ? [
     ...currentConversation.messages,
     ...(streamingMessage ? [{ role: 'assistant', content: streamingMessage }] : [])
   ] : [];
 
-  const handleImportConversations = (imported: Conversation[]) => {
-    // 合并导入的会话，保持现有的会话
+  const handleImportConversations = useCallback((imported: Conversation[]) => {
     setConversations(prev => {
-      // 创建一个 Set 来存储现有的会话 ID
       const existingIds = new Set(prev.map(c => c.id));
-      
-      // 过滤掉已存在的会话，只添加新的会话
       const newConversations = imported.filter(c => !existingIds.has(c.id));
-      
-      // 将新会话添加到现有会话列表的开头
       return [...newConversations, ...prev];
     });
-  };
+  }, []);
+
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <div className="flex h-screen">
@@ -250,46 +242,42 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-4 space-y-4">
-          {displayMessages.map((message, index) => (
-            <ChatMessage key={index} {...message} />
-          ))}
-          {loading && !streamingMessage && (
-            <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-lg p-3 bg-base-200">
-                Thinking...
+        <main className="flex-1 overflow-auto p-4">
+          <div className="max-w-4xl mx-auto">
+            {displayMessages.map((message, index) => (
+              <ChatMessage
+                key={`${currentConversationId}-${index}`}
+                role={message.role}
+                content={message.content}
+              />
+            ))}
+            {error && (
+              <div className="text-error text-center p-4">
+                Error: {error}
               </div>
-            </div>
-          )}
-          {error && (
-            <div className="flex justify-center">
-              <div className="max-w-[80%] rounded-lg p-3 bg-error text-white">
-                {error}
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </main>
 
-        <form onSubmit={handleSubmit} className="p-4 border-t">
-          <div className="flex gap-2 max-w-4xl mx-auto">
+        <footer className="p-4 border-t">
+          <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex gap-4">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={selectedModel ? "Type your message..." : "Please select a model first"}
-              className="flex-1 input input-bordered"
+              placeholder="Type your message..."
+              className="input input-bordered flex-1"
               disabled={loading || !selectedModel}
             />
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={loading || !input.trim() || !selectedModel}
-              title={!selectedModel ? "Please select a model first" : undefined}
+              disabled={loading || !selectedModel || !input.trim()}
             >
-              <PaperAirplaneIcon className="h-5 w-5" />
+              <PaperAirplaneIcon className="w-5 h-5" />
             </button>
-          </div>
-        </form>
+          </form>
+        </footer>
       </div>
     </div>
   );
