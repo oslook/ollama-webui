@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { tomorrow } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessageProps {
   role: string;
@@ -10,7 +11,7 @@ interface ChatMessageProps {
 export default function ChatMessage({ role, content }: ChatMessageProps) {
   return (
     <div
-      className={`flex ${   
+      className={`flex ${
         role === 'user' ? 'justify-end' : 'justify-start'
       }`}
     >
@@ -23,24 +24,26 @@ export default function ChatMessage({ role, content }: ChatMessageProps) {
       >
         <ReactMarkdown
           className="prose dark:prose-invert max-w-none"
+          remarkPlugins={[remarkGfm]}
           components={{
-            code({node, inline, className, children, ...props}) {
+            code({ node, inline, className, children, ...props }) {
               const match = /language-(\w+)/.exec(className || '');
               return !inline && match ? (
-                <SyntaxHighlighter
-                  style={vscDarkPlus}
-                  language={match[1]}
-                  PreTag="div"
-                  {...props}
-                >
-                  {String(children).replace(/\n$/, '')}
-                </SyntaxHighlighter>
+                <div className="relative">
+                  <SyntaxHighlighter
+                    language={match[1]}
+                    style={tomorrow}
+                    PreTag="div"
+                  >
+                    {String(children).replace(/\n$/, '')}
+                  </SyntaxHighlighter>
+                </div>
               ) : (
                 <code className={className} {...props}>
                   {String(children)}
                 </code>
               );
-            },
+            }
           }}
         >
           {String(content)}

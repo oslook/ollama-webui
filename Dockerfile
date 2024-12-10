@@ -5,16 +5,20 @@ WORKDIR /app
 
 # Install dependencies only when needed
 COPY package*.json ./
-RUN npm install
 
-# Copy source files
+# Install dependencies with verbose logging
+RUN npm ci --verbose && \
+    # Install peer dependencies
+    npm install -g postcss postcss-cli autoprefixer
+
+# Copy all files
 COPY . .
 
 # Set environment variables
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
 
-# Build the application
+# Build the application with verbose output
 RUN npm run build
 
 # Production stage
@@ -27,13 +31,18 @@ ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 
 # Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
 # Copy necessary files from builder
+COPY --from=builder /app/next.config.js ./
+COPY --from=builder /app/package.json ./
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+# Set permissions
+RUN chown -R nextjs:nodejs .
 
 # Switch to non-root user
 USER nextjs
