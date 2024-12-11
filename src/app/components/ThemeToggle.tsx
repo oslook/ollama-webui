@@ -31,16 +31,18 @@ export default function ThemeToggle() {
   }
 
   return (
-    <button
-      onClick={toggleTheme}
-      className="btn btn-circle btn-ghost"
-      aria-label="Toggle theme"
-    >
-      {theme === 'light' ? (
-        <SunIcon className="w-6 h-6" />
-      ) : (
-        <MoonIcon className="w-6 h-6" />
-      )}
-    </button>
+    <div className="relative">
+      <button
+        onClick={toggleTheme}
+        className="btn btn-circle btn-ghost"
+        aria-label="Toggle theme"
+      >
+        {theme === 'light' ? (
+          <SunIcon className="w-6 h-6" />
+        ) : (
+          <MoonIcon className="w-6 h-6" />
+        )}
+      </button>
+    </div>
   );
 } 

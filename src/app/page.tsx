@@ -7,6 +7,7 @@ import ModelSelector from './components/ModelSelector';
 import Settings from './components/Settings';
 import ConversationList from './components/ConversationList';
 import { Conversation, Message } from './types';
+import ThemeToggle from "./components/ThemeToggle";
 
 // 从localStorage获取保存的URL，如果没有则使用默认值
 const getSavedUrl = () => {
@@ -224,7 +225,7 @@ export default function Home() {
       
       <div className="flex-1 flex flex-col">
         <header className="p-4 border-b">
-          <div className="flex items-center justify-between max-w-4xl mx-auto w-full">
+          <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
             <h1 className="text-2xl font-bold">Ollama Chat</h1>
             <div className="flex items-center gap-4">
               <ModelSelector
@@ -238,12 +239,13 @@ export default function Home() {
                 conversations={conversations}
                 onConversationsImport={handleImportConversations}
               />
+              <ThemeToggle />
             </div>
           </div>
         </header>
 
         <main className="flex-1 overflow-auto p-4">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             {displayMessages.map((message, index) => (
               <ChatMessage
                 key={`${currentConversationId}-${index}`}

@@ -23,7 +23,7 @@ export default function ChatMessage({ role, content }: ChatMessageProps) {
           </div>
         </div>
       </div>
-      <div className={`chat-bubble ${role === 'user' ? 'chat-bubble-primary' : 'chat-bubble-neutral'} max-w-[85%] lg:max-w-[75%]`}>
+      <div className={`chat-bubble ${role === 'user' ? 'chat-bubble-neutral' : 'chat-bubble-neutral'} max-w-[85%] lg:max-w-[75%]`}>
         <div className={`prose ${role === 'user' ? 'prose-invert' : ''} prose-headings:text-base-content prose-strong:text-base-content prose-p:text-base-content max-w-none`}>
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
