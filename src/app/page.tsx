@@ -8,54 +8,54 @@ import Settings from './components/Settings';
 import ConversationList from './components/ConversationList';
 import { Conversation, Message } from './types';
 import ThemeToggle from "./components/ThemeToggle";
+import WelcomeDialog, { HelpButton } from './components/WelcomeDialog';
+import { useAppStore } from './store/useAppStore';
 
-// 从localStorage获取保存的URL，如果没有则使用默认值
-const getSavedUrl = () => {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem('ollamaUrl') || 'http://127.0.0.1:11434';
-  }
-  return 'http://127.0.0.1:11434';
-};
-
-// 生成唯一ID
+// Generate unique ID
 const generateId = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState('');
-  const [baseUrl, setBaseUrl] = useState(getSavedUrl);
   const [error, setError] = useState<string | null>(null);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
 
-  // 初始化加载
+  // Use Zustand store
+  const {
+    conversations,
+    ollamaUrl,
+    hasVisited,
+    setConversations,
+    addConversation,
+    updateConversation,
+    deleteConversation,
+    setOllamaUrl,
+    setHasVisited,
+    getCurrentConversation
+  } = useAppStore();
+
+  // Initialize loading
   useEffect(() => {
     setMounted(true);
-    const savedConversations = localStorage.getItem('conversations');
-    if (savedConversations) {
-      try {
-        const parsed = JSON.parse(savedConversations);
-        setConversations(parsed);
-        if (parsed.length > 0) {
-          setCurrentConversationId(parsed[0].id);
-        }
-      } catch (e) {
-        console.error('Failed to parse saved conversations:', e);
-      }
+    if (conversations.length > 0) {
+      setCurrentConversationId(conversations[0].id);
     }
-  }, []);
+  }, [conversations]);
 
-  // 保存会话到localStorage
+  // Check if first visit - only show welcome dialog once
   useEffect(() => {
-    if (mounted) {
-      localStorage.setItem('conversations', JSON.stringify(conversations));
+    console.log(hasVisited)
+    if (!hasVisited) {
+      setShowWelcomeDialog(true);
+      setHasVisited(true);
     }
-  }, [conversations, mounted]);
+  }, [hasVisited, setHasVisited]);
 
-  const currentConversation = conversations.find(c => c.id === currentConversationId);
+  const currentConversation = getCurrentConversation(currentConversationId);
 
   const handleNewConversation = useCallback(() => {
     const newConversation: Conversation = {
@@ -66,35 +66,28 @@ export default function Home() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setConversations(prev => [newConversation, ...prev]);
+    addConversation(newConversation);
     setCurrentConversationId(newConversation.id);
-  }, [selectedModel]);
+  }, [selectedModel, addConversation]);
 
   const handleDeleteConversation = useCallback((id: string) => {
-    setConversations(prev => prev.filter(c => c.id !== id));
+    deleteConversation(id);
     if (currentConversationId === id) {
       const remaining = conversations.filter(c => c.id !== id);
       setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
     }
-  }, [currentConversationId, conversations]);
+  }, [currentConversationId, conversations, deleteConversation]);
 
   const handleUrlChange = useCallback((newUrl: string) => {
-    setBaseUrl(newUrl);
-    localStorage.setItem('ollamaUrl', newUrl);
-  }, []);
+    setOllamaUrl(newUrl);
+  }, [setOllamaUrl]);
 
   const updateConversationTitle = useCallback((id: string, firstMessage: string) => {
-    setConversations(prev => prev.map(conv => {
-      if (conv.id === id) {
-        return {
-          ...conv,
-          title: firstMessage.substring(0, 30) + (firstMessage.length > 30 ? '...' : ''),
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return conv;
-    }));
-  }, []);
+    updateConversation(id, {
+      title: firstMessage.substring(0, 30) + (firstMessage.length > 30 ? '...' : ''),
+      updatedAt: new Date().toISOString()
+    });
+  }, [updateConversation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,20 +101,13 @@ export default function Home() {
     const newMessage: Message = { role: 'user', content: input };
     const currentMessages = currentConversation?.messages || [];
     
-    setConversations(prev => prev.map(conv => {
-      if (conv.id === currentConversationId) {
-        const updatedMessages = [...conv.messages, newMessage];
-        if (conv.messages.length === 0) {
-          updateConversationTitle(conv.id, input);
-        }
-        return {
-          ...conv,
-          messages: updatedMessages,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return conv;
-    }));
+    updateConversation(currentConversationId!, {
+      messages: [...(currentConversation?.messages || []), newMessage],
+      updatedAt: new Date().toISOString()
+    });
+    if (currentConversation?.messages.length === 0) {
+      updateConversationTitle(currentConversationId!, input);
+    }
 
     setInput('');
     setLoading(true);
@@ -129,7 +115,7 @@ export default function Home() {
     setStreamingMessage('');
 
     try {
-      const response = await fetch(`${baseUrl}/api/chat`, {
+      const response = await fetch(`${ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,16 +162,10 @@ export default function Home() {
       }
 
       if (accumulatedMessage) {
-        setConversations(prev => prev.map(conv => {
-          if (conv.id === currentConversationId) {
-            return {
-              ...conv,
-              messages: [...conv.messages, { role: 'assistant', content: accumulatedMessage }],
-              updatedAt: new Date().toISOString()
-            };
-          }
-          return conv;
-        }));
+        updateConversation(currentConversationId!, {
+          messages: [...(currentConversation?.messages || []), { role: 'assistant', content: accumulatedMessage }],
+          updatedAt: new Date().toISOString()
+        });
       }
     } catch (error) {
       console.error('Error in chat request:', error);
@@ -202,12 +182,10 @@ export default function Home() {
   ] : [];
 
   const handleImportConversations = useCallback((imported: Conversation[]) => {
-    setConversations(prev => {
-      const existingIds = new Set(prev.map(c => c.id));
-      const newConversations = imported.filter(c => !existingIds.has(c.id));
-      return [...newConversations, ...prev];
-    });
-  }, []);
+    const existingIds = new Set(conversations.map(c => c.id));
+    const newConversations = imported.filter(c => !existingIds.has(c.id));
+    setConversations([...newConversations, ...conversations]);
+  }, [conversations, setConversations]);
 
   if (!mounted) {
     return null;
@@ -231,11 +209,11 @@ export default function Home() {
               <ModelSelector
                 selectedModel={selectedModel}
                 onModelSelect={setSelectedModel}
-                baseUrl={baseUrl}
+                baseUrl={ollamaUrl}
               />
-              <Settings 
-                onUrlChange={handleUrlChange} 
-                initialUrl={baseUrl}
+              <Settings
+                onUrlChange={handleUrlChange}
+                initialUrl={ollamaUrl}
                 conversations={conversations}
                 onConversationsImport={handleImportConversations}
               />
@@ -281,6 +259,15 @@ export default function Home() {
           </form>
         </footer>
       </div>
+
+      {/* Help button */}
+      <HelpButton onClick={() => setShowWelcomeDialog(true)} />
+
+      {/* Welcome dialog */}
+      <WelcomeDialog
+        isOpen={showWelcomeDialog}
+        onClose={() => setShowWelcomeDialog(false)}
+      />
     </div>
   );
 }
