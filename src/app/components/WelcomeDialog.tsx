@@ -5,6 +5,17 @@ interface WelcomeDialogProps {
   onClose: () => void;
 }
 
+/**
+ * Renders a welcome modal for Ollama Chat when `isOpen` is true.
+ *
+ * The modal includes an overlay (clicking it closes the dialog), a header with a close button,
+ * usage instructions, a command snippet to start Ollama, a privacy notice, and a "Get Started"
+ * action button that also closes the dialog.
+ *
+ * @param isOpen - Controls visibility; when false the component returns `null`.
+ * @param onClose - Callback invoked when the user requests to close the modal (overlay click, header close button, or "Get Started" button).
+ * @returns A JSX element for the dialog when open, otherwise `null`.
+ */
 export default function WelcomeDialog({ isOpen, onClose }: WelcomeDialogProps) {
   if (!isOpen) return null;
 
@@ -67,7 +78,11 @@ export default function WelcomeDialog({ isOpen, onClose }: WelcomeDialogProps) {
   );
 }
 
-// Bottom right help button component
+/**
+ * Fixed floating help button (circular) positioned in the bottom-right corner that invokes a handler when clicked.
+ *
+ * @param onClick - Callback invoked when the user activates the button.
+ */
 export function HelpButton({ onClick }: { onClick: () => void }) {
   return (
     <button
