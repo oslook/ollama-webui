@@ -14,6 +14,17 @@ import { useAppStore } from './store/useAppStore';
 // Generate unique ID
 const generateId = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
+/**
+ * Client React page component that renders the Ollama Chat UI and coordinates chat state, store actions, and streaming API calls.
+ *
+ * Renders a two-pane chat interface with a conversation list and chat area. Integrates with the app Zustand store to read and mutate conversations and the Ollama API URL, and uses store-provided actions (addConversation, updateConversation, deleteConversation, setConversations, setOllamaUrl, setHasVisited, getCurrentConversation). Handles:
+ * - Creating, selecting, and deleting conversations.
+ * - Updating a conversation's title from the first user message.
+ * - Submitting user messages to the Ollama streaming chat endpoint (`${ollamaUrl}/api/chat`), accumulating streamed assistant content and appending it to the current conversation.
+ * - Showing a one-time welcome dialog on first visit (driven by the store's `hasVisited` flag).
+ *
+ * The component manages local UI state (input, loading, selected model, errors, streamingMessage, currentConversationId, mounted, showWelcomeDialog) and returns the page's JSX.
+ */
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [input, setInput] = useState('');
