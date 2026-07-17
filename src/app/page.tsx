@@ -40,6 +40,10 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [streamingReasoning, setStreamingReasoning] = useState('');
+  // Conversation the in-progress stream belongs to, so the live preview only
+  // shows in that conversation (not in a New Chat opened mid-stream).
+  const [streamingConversationId, setStreamingConversationId] = useState<string | null>(null);
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -57,7 +61,9 @@ export default function Home() {
     setCurrentConversationId,
     setOllamaUrl,
     setHasVisited,
-    getCurrentConversation
+    getCurrentConversation,
+    thinkEnabled,
+    setThinkEnabled
   } = useAppStore();
 
   // Initialize on mount: select the most recent conversation (list is
@@ -134,9 +140,18 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setStreamingMessage('');
+    setStreamingReasoning('');
+    setStreamingConversationId(conversationId);
 
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // Hoisted so the abort/catch path can read the freshest accumulated values.
+    let accumulatedMessage = '';
+    let accumulatedReasoning = '';
+    let rawContent = '';
+    // Capture once so a mid-stream toggle change can't cause inconsistent parsing.
+    const showThinking = thinkEnabled;
 
     try {
       const response = await fetch(`${ollamaUrl}/api/chat`, {
@@ -146,8 +161,9 @@ export default function Home() {
         },
         body: JSON.stringify({
           model: selectedModel,
-          messages: [...existingMessages, userMessage],
-          stream: true
+          messages: [...existingMessages, userMessage].map(({ role, content }) => ({ role, content })),
+          stream: true,
+          think: thinkEnabled
         }),
         signal: controller.signal,
       });
@@ -163,7 +179,6 @@ export default function Home() {
 
       const decoder = new TextDecoder();
       let buffer = '';
-      let accumulatedMessage = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -178,10 +193,29 @@ export default function Home() {
           if (line.trim() === '') continue;
           try {
             const data = JSON.parse(line);
-            if (data.message?.content) {
-              accumulatedMessage += data.message.content;
-              setStreamingMessage(accumulatedMessage);
+            if (showThinking && data.message?.thinking) {
+              accumulatedReasoning += data.message.thinking;
             }
+            if (data.message?.content) {
+              rawContent += data.message.content;
+            }
+
+            if (!showThinking) {
+              // Thinking off: drop the thinking field entirely and strip any
+              // inline <think> blocks the model emits anyway, keeping only content.
+              accumulatedMessage = splitThink(rawContent).content;
+              accumulatedReasoning = '';
+            } else if (accumulatedReasoning) {
+              // Separate-field path (newer Ollama): content is already pure answer.
+              accumulatedMessage = rawContent;
+            } else {
+              // Inline <think> fallback for models/versions that embed reasoning.
+              const { content, reasoning } = splitThink(rawContent);
+              accumulatedMessage = content;
+              accumulatedReasoning = reasoning;
+            }
+            setStreamingMessage(accumulatedMessage);
+            setStreamingReasoning(accumulatedReasoning);
           } catch (err) {
             console.warn('Failed to parse line:', line);
           }
@@ -192,22 +226,43 @@ export default function Home() {
       if (buffer.trim() !== '') {
         try {
           const data = JSON.parse(buffer);
+          if (showThinking && data.message?.thinking) {
+            accumulatedReasoning += data.message.thinking;
+          }
           if (data.message?.content) {
-            accumulatedMessage += data.message.content;
+            rawContent += data.message.content;
+          }
+          if (!showThinking) {
+            accumulatedMessage = splitThink(rawContent).content;
+            accumulatedReasoning = '';
+          } else if (accumulatedReasoning) {
+            accumulatedMessage = rawContent;
+          } else {
+            const { content, reasoning } = splitThink(rawContent);
+            accumulatedMessage = content;
+            accumulatedReasoning = reasoning;
           }
         } catch (err) {
           console.warn('Failed to parse trailing buffer:', buffer);
         }
       }
 
-      if (accumulatedMessage) {
-        appendMessage(conversationId, { role: 'assistant', content: accumulatedMessage });
+      if (accumulatedMessage || accumulatedReasoning) {
+        appendMessage(conversationId, {
+          role: 'assistant',
+          content: accumulatedMessage,
+          ...(accumulatedReasoning ? { reasoning: accumulatedReasoning } : {}),
+        });
       }
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         // Persist whatever was streamed before the user aborted.
-        if (streamingMessage) {
-          appendMessage(conversationId, { role: 'assistant', content: streamingMessage });
+        if (accumulatedMessage || accumulatedReasoning) {
+          appendMessage(conversationId, {
+            role: 'assistant',
+            content: accumulatedMessage,
+            ...(accumulatedReasoning ? { reasoning: accumulatedReasoning } : {}),
+          });
         }
       } else {
         console.error('Error in chat request:', error);
@@ -217,6 +272,8 @@ export default function Home() {
       abortRef.current = null;
       setLoading(false);
       setStreamingMessage('');
+      setStreamingReasoning('');
+      setStreamingConversationId(null);
     }
   };
 
@@ -226,7 +283,9 @@ export default function Home() {
 
   const displayMessages = currentConversation ? [
     ...currentConversation.messages,
-    ...(streamingMessage ? [{ role: 'assistant' as const, content: streamingMessage }] : [])
+    ...((streamingConversationId === currentConversationId && (streamingMessage || streamingReasoning))
+      ? [{ role: 'assistant' as const, content: streamingMessage, reasoning: streamingReasoning }]
+      : [])
   ] : [];
 
   const handleImportConversations = useCallback((imported: Conversation[]) => {
@@ -277,6 +336,7 @@ export default function Home() {
                 key={`${currentConversationId}-${index}-${message.role}`}
                 role={message.role}
                 content={message.content}
+                reasoning={message.reasoning}
               />
             ))}
             {error && (
@@ -288,7 +348,16 @@ export default function Home() {
         </main>
 
         <footer className="p-4 border-t">
-          <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex gap-4">
+          <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none shrink-0" title="Request the model's thinking process">
+              <input
+                type="checkbox"
+                className="toggle toggle-sm toggle-primary"
+                checked={thinkEnabled}
+                onChange={(e) => setThinkEnabled(e.target.checked)}
+              />
+              <span className="text-sm text-base-content/70">Thinking</span>
+            </label>
             <input
               type="text"
               value={input}

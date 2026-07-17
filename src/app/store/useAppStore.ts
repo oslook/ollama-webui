@@ -23,6 +23,10 @@ interface AppState {
   hasVisited: boolean;
   setHasVisited: (visited: boolean) => void;
 
+  // Whether to request the model's thinking/reasoning process
+  thinkEnabled: boolean;
+  setThinkEnabled: (enabled: boolean) => void;
+
   // Utility functions
   getCurrentConversation: (id: string | null) => Conversation | undefined;
 }
@@ -72,6 +76,10 @@ export const useAppStore = create<AppState>()(
       hasVisited: false,
       setHasVisited: (visited) => set({ hasVisited: visited }),
 
+      // Thinking toggle (default on)
+      thinkEnabled: true,
+      setThinkEnabled: (enabled) => set({ thinkEnabled: enabled }),
+
       // Utility functions
       getCurrentConversation: (id) => {
         if (!id) return undefined;
@@ -83,7 +91,8 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         conversations: state.conversations,
         ollamaUrl: state.ollamaUrl,
-        hasVisited: state.hasVisited
+        hasVisited: state.hasVisited,
+        thinkEnabled: state.thinkEnabled
       })
     }
   )

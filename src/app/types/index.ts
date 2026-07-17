@@ -3,6 +3,7 @@ export type Role = 'user' | 'assistant' | 'system';
 export interface Message {
   role: Role;
   content: string;
+  reasoning?: string;
 }
 
 export interface Conversation {

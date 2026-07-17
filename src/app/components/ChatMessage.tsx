@@ -8,6 +8,7 @@ import type { Role } from '../types';
 interface ChatMessageProps {
   role: Role;
   content: string;
+  reasoning?: string;
 }
 
 // react-markdown v10 no longer passes an `inline` prop to `code`; block code is
@@ -87,7 +88,8 @@ const markdownComponents: Components = {
   },
 };
 
-export default function ChatMessage({ role, content }: ChatMessageProps) {
+export default function ChatMessage({ role, content, reasoning }: ChatMessageProps) {
+  const hasReasoning = role === 'assistant' && !!reasoning?.trim();
   return (
     <div className={`chat ${role === 'user' ? 'chat-end' : 'chat-start'} mb-4 px-4 lg:px-8`}>
       <div className="chat-image avatar placeholder">
@@ -102,6 +104,19 @@ export default function ChatMessage({ role, content }: ChatMessageProps) {
         </div>
       </div>
       <div className={`chat-bubble ${role === 'user' ? 'chat-bubble-neutral' : 'chat-bubble-neutral'} max-w-[85%] lg:max-w-[75%]`}>
+        {hasReasoning && (
+          <div className="collapse collapse-arrow bg-base-200/50 rounded-box mb-2">
+            <input type="checkbox" />
+            <div className="collapse-title text-sm font-medium text-base-content/70">Thinking</div>
+            <div className="collapse-content">
+              <div className="prose prose-sm max-w-none text-base-content/70">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {reasoning!}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        )}
         <div className={`prose ${role === 'user' ? 'prose-invert' : ''} prose-headings:text-base-content prose-strong:text-base-content prose-p:text-base-content max-w-none`}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
             {content}
