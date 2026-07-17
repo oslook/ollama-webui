@@ -136,6 +136,28 @@ export default function Settings({
               className="input input-bordered w-full"
               placeholder="http://127.0.0.1:11434"
             />
+            <div className="mt-2 text-xs text-base-content/60 space-y-1">
+              <p>
+                Deploying on the internet? The browser talks to Ollama directly,
+                so Ollama must allow cross-origin requests. On the Ollama host set:
+              </p>
+              <code className="block bg-base-200 rounded px-2 py-1 text-[11px] whitespace-pre-wrap break-all">
+                OLLAMA_HOST=0.0.0.0{'\n'}OLLAMA_ORIGINS=*
+              </code>
+              <p>
+                then restart Ollama. Also note: an HTTPS site cannot reach an{' '}
+                <code className="bg-base-200 rounded px-1">http://</code> Ollama URL
+                (mixed content) — serve Ollama over HTTPS or use a reverse proxy.{' '}
+                <a
+                  href="https://docs.ollama.com/faq#how-can-i-allow-additional-web-origins-to-access-ollama"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="link link-primary"
+                >
+                  Docs
+                </a>
+              </p>
+            </div>
           </div>
 
           <div className="divider my-2">Chat History</div>

@@ -62,8 +62,23 @@ export default function ModelSelector({ selectedModel, onModelSelect, baseUrl }:
 
   if (error) {
     return (
-      <div className="text-error text-sm">
-        {error}
+      <div className="text-error text-sm max-w-xs">
+        <div>{error}</div>
+        <div className="text-base-content/60 text-xs mt-1">
+          If this app is hosted online, Ollama must allow cross-origin requests.
+          On the Ollama host set{' '}
+          <code className="bg-base-200 rounded px-1">OLLAMA_ORIGINS=*</code> and{' '}
+          <code className="bg-base-200 rounded px-1">OLLAMA_HOST=0.0.0.0</code>,
+          then restart it.{' '}
+          <a
+            href="https://docs.ollama.com/faq#how-can-i-allow-additional-web-origins-to-access-ollama"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="link link-primary"
+          >
+            Learn more
+          </a>
+        </div>
       </div>
     );
   }

@@ -311,7 +311,12 @@ export default function Home() {
       <div className="flex-1 flex flex-col">
         <header className="p-4 border-b">
           <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
-            <h1 className="text-2xl font-bold">Ollama Chat</h1>
+            <div className="flex items-baseline gap-3">
+              <h1 className="text-2xl font-bold">Ollama Chat</h1>
+              <span className="hidden sm:inline text-sm text-base-content/50">
+                Chat with your local models, privately.
+              </span>
+            </div>
             <div className="flex items-center gap-4">
               <ModelSelector
                 selectedModel={selectedModel}
