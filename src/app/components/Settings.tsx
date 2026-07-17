@@ -23,6 +23,19 @@ export default function Settings({
     setUrl(initialUrl);
   }, [initialUrl]);
 
+  // Close the panel on Escape (mirrors Cancel: revert the draft url and close).
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setUrl(initialUrl);
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, initialUrl]);
+
   const handleSave = () => {
     onUrlChange(url);
     setIsOpen(false);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useEffectEvent } from 'react';
 import { Model } from '../types';
 
 interface ModelSelectorProps {
@@ -12,12 +12,17 @@ export default function ModelSelector({ selectedModel, onModelSelect, baseUrl }:
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Keep the latest selection/callback in refs so the fetch effect can depend
-  // only on `baseUrl` without re-firing whenever the selection changes.
-  const selectedModelRef = useRef(selectedModel);
-  const onModelSelectRef = useRef(onModelSelect);
-  selectedModelRef.current = selectedModel;
-  onModelSelectRef.current = onModelSelect;
+  // Reconcile the selection against a freshly fetched list without making the
+  // fetch effect depend on `selectedModel`/`onModelSelect` (which would refetch
+  // on every selection change). Effect Events always see the latest props.
+  const reconcileSelection = useEffectEvent((modelList: Model[]) => {
+    if (modelList.length > 0) {
+      const modelNames = modelList.map((m) => m.name);
+      if (!modelNames.includes(selectedModel)) {
+        onModelSelect(modelList[0].name);
+      }
+    }
+  });
 
   // Fetch the model list on mount and whenever the server URL changes.
   useEffect(() => {
@@ -35,14 +40,7 @@ export default function ModelSelector({ selectedModel, onModelSelect, baseUrl }:
         const modelList: Model[] = data.models || [];
         if (cancelled) return;
         setModels(modelList);
-
-        // If the current selection is not in the list, pick the first one.
-        if (modelList.length > 0) {
-          const modelNames = modelList.map((m) => m.name);
-          if (!modelNames.includes(selectedModelRef.current)) {
-            onModelSelectRef.current(modelList[0].name);
-          }
-        }
+        reconcileSelection(modelList);
       } catch (error) {
         if (cancelled) return;
         console.error('Error fetching models:', error);

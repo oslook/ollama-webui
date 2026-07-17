@@ -1,3 +1,6 @@
+'use client';
+
+import { useEffect } from 'react';
 import { XMarkIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 
 interface WelcomeDialogProps {
@@ -6,6 +9,17 @@ interface WelcomeDialogProps {
 }
 
 export default function WelcomeDialog({ isOpen, onClose }: WelcomeDialogProps) {
+  // Close on Escape while the dialog is open. This effect only invokes the
+  // `onClose` callback (no setState), so it doesn't trigger cascading renders.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
