@@ -14,6 +14,25 @@ import { useAppStore } from './store/useAppStore';
 // Generate unique ID
 const generateId = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
+// Split inline <think>...</think> reasoning out of streamed content. Re-parses
+// the full buffer each call so tags spanning chunk boundaries are never seen in
+// isolation; `(<\/think>|$)` captures a still-open block mid-stream.
+function splitThink(raw: string): { content: string; reasoning: string } {
+  if (raw.indexOf('<think>') === -1) return { content: raw, reasoning: '' };
+  let content = '';
+  let reasoning = '';
+  let lastEnd = 0;
+  const re = /<think>([\s\S]*?)(<\/think>|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    content += raw.slice(lastEnd, m.index);
+    reasoning += m[1];
+    lastEnd = m.index + m[0].length;
+  }
+  content += raw.slice(lastEnd);
+  return { content: content.trim(), reasoning: reasoning.trim() };
+}
+
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [input, setInput] = useState('');
