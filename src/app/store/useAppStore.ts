@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Conversation } from '../types';
+import { Conversation, Message } from '../types';
 
 interface AppState {
   // Conversations
@@ -8,7 +8,12 @@ interface AppState {
   setConversations: (conversations: Conversation[]) => void;
   addConversation: (conversation: Conversation) => void;
   updateConversation: (id: string, updates: Partial<Conversation>) => void;
+  appendMessage: (id: string, message: Message) => void;
   deleteConversation: (id: string) => void;
+
+  // Currently selected conversation
+  currentConversationId: string | null;
+  setCurrentConversationId: (id: string | null) => void;
 
   // Ollama URL
   ollamaUrl: string;
@@ -38,10 +43,26 @@ export const useAppStore = create<AppState>()(
             conv.id === id ? { ...conv, ...updates } : conv
           )
         })),
+      appendMessage: (id, message) =>
+        set((state) => ({
+          conversations: state.conversations.map((conv) =>
+            conv.id === id
+              ? {
+                  ...conv,
+                  messages: [...conv.messages, message],
+                  updatedAt: new Date().toISOString()
+                }
+              : conv
+          )
+        })),
       deleteConversation: (id) =>
         set((state) => ({
           conversations: state.conversations.filter((conv) => conv.id !== id)
         })),
+
+      // Currently selected conversation
+      currentConversationId: null,
+      setCurrentConversationId: (id) => set({ currentConversationId: id }),
 
       // Ollama URL
       ollamaUrl: 'http://127.0.0.1:11434',

@@ -9,14 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@headlessui/react": "^1.7.18",
     "@heroicons/react": "^2.1.1",
-    "axios": "^1.6.7",
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18",
     "react-markdown": "^8.0.7",
-    "react-syntax-highlighter": "^15.5.0",
+    "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^3.0.1",
     "zustand": "^5.0.8"
   },
@@ -25,7 +23,7 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/react-syntax-highlighter": "^15.5.11",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "autoprefixer": "^10.4.17",
     "daisyui": "^4.6.1",
     "eslint": "^8",

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
 import ChatMessage from './components/ChatMessage';
 import ModelSelector from './components/ModelSelector';
@@ -21,34 +21,39 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [streamingMessage, setStreamingMessage] = useState('');
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Use Zustand store
   const {
     conversations,
+    currentConversationId,
     ollamaUrl,
     hasVisited,
     setConversations,
     addConversation,
     updateConversation,
+    appendMessage,
     deleteConversation,
+    setCurrentConversationId,
     setOllamaUrl,
     setHasVisited,
     getCurrentConversation
   } = useAppStore();
 
-  // Initialize loading
+  // Initialize on mount: select the most recent conversation (list is
+  // ordered newest-first). Runs once so it doesn't fight user selection.
   useEffect(() => {
     setMounted(true);
-    if (conversations.length > 0) {
+    const { conversations, currentConversationId, setCurrentConversationId } =
+      useAppStore.getState();
+    if (!currentConversationId && conversations.length > 0) {
       setCurrentConversationId(conversations[0].id);
     }
-  }, [conversations]);
+  }, []);
 
   // Check if first visit - only show welcome dialog once
   useEffect(() => {
-    console.log(hasVisited)
     if (!hasVisited) {
       setShowWelcomeDialog(true);
       setHasVisited(true);
@@ -57,7 +62,7 @@ export default function Home() {
 
   const currentConversation = getCurrentConversation(currentConversationId);
 
-  const handleNewConversation = useCallback(() => {
+  const handleNewConversation = useCallback((): string => {
     const newConversation: Conversation = {
       id: generateId(),
       title: 'New Chat',
@@ -68,7 +73,8 @@ export default function Home() {
     };
     addConversation(newConversation);
     setCurrentConversationId(newConversation.id);
-  }, [selectedModel, addConversation]);
+    return newConversation.id;
+  }, [selectedModel, addConversation, setCurrentConversationId]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     deleteConversation(id);
@@ -76,43 +82,42 @@ export default function Home() {
       const remaining = conversations.filter(c => c.id !== id);
       setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
     }
-  }, [currentConversationId, conversations, deleteConversation]);
+  }, [currentConversationId, conversations, deleteConversation, setCurrentConversationId]);
 
   const handleUrlChange = useCallback((newUrl: string) => {
     setOllamaUrl(newUrl);
   }, [setOllamaUrl]);
 
-  const updateConversationTitle = useCallback((id: string, firstMessage: string) => {
-    updateConversation(id, {
-      title: firstMessage.substring(0, 30) + (firstMessage.length > 30 ? '...' : ''),
-      updatedAt: new Date().toISOString()
-    });
-  }, [updateConversation]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !selectedModel || loading) return;
 
-    if (!currentConversationId) {
-      handleNewConversation();
-      return;
-    }
+    // Ensure a conversation exists, and keep going in the same handler
+    // so the first message is not dropped.
+    const conversationId = currentConversationId ?? handleNewConversation();
 
-    const newMessage: Message = { role: 'user', content: input };
-    const currentMessages = currentConversation?.messages || [];
-    
-    updateConversation(currentConversationId!, {
-      messages: [...(currentConversation?.messages || []), newMessage],
-      updatedAt: new Date().toISOString()
-    });
-    if (currentConversation?.messages.length === 0) {
-      updateConversationTitle(currentConversationId!, input);
+    const userMessage: Message = { role: 'user', content: input };
+
+    // Read the latest messages from the store (not a stale render snapshot)
+    // to build the request payload and to derive the title.
+    const existingMessages =
+      useAppStore.getState().getCurrentConversation(conversationId)?.messages ?? [];
+    const isFirstMessage = existingMessages.length === 0;
+
+    appendMessage(conversationId, userMessage);
+    if (isFirstMessage) {
+      updateConversation(conversationId, {
+        title: input.substring(0, 30) + (input.length > 30 ? '...' : ''),
+      });
     }
 
     setInput('');
     setLoading(true);
     setError(null);
     setStreamingMessage('');
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       const response = await fetch(`${ollamaUrl}/api/chat`, {
@@ -122,9 +127,10 @@ export default function Home() {
         },
         body: JSON.stringify({
           model: selectedModel,
-          messages: [...currentMessages, newMessage],
+          messages: [...existingMessages, userMessage],
           stream: true
         }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -137,48 +143,71 @@ export default function Home() {
       }
 
       const decoder = new TextDecoder();
+      let buffer = '';
       let accumulatedMessage = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        // Keep the last (possibly partial) line in the buffer.
+        buffer = lines.pop() ?? '';
 
         for (const line of lines) {
           if (line.trim() === '') continue;
-
           try {
             const data = JSON.parse(line);
             if (data.message?.content) {
               accumulatedMessage += data.message.content;
               setStreamingMessage(accumulatedMessage);
             }
-          } catch (e) {
+          } catch (err) {
             console.warn('Failed to parse line:', line);
           }
         }
       }
 
+      // Flush any trailing complete JSON object left in the buffer.
+      if (buffer.trim() !== '') {
+        try {
+          const data = JSON.parse(buffer);
+          if (data.message?.content) {
+            accumulatedMessage += data.message.content;
+          }
+        } catch (err) {
+          console.warn('Failed to parse trailing buffer:', buffer);
+        }
+      }
+
       if (accumulatedMessage) {
-        updateConversation(currentConversationId!, {
-          messages: [...(currentConversation?.messages || []), { role: 'assistant', content: accumulatedMessage }],
-          updatedAt: new Date().toISOString()
-        });
+        appendMessage(conversationId, { role: 'assistant', content: accumulatedMessage });
       }
     } catch (error) {
-      console.error('Error in chat request:', error);
-      setError(error instanceof Error ? error.message : 'Failed to send message');
+      if ((error as Error).name === 'AbortError') {
+        // Persist whatever was streamed before the user aborted.
+        if (streamingMessage) {
+          appendMessage(conversationId, { role: 'assistant', content: streamingMessage });
+        }
+      } else {
+        console.error('Error in chat request:', error);
+        setError(error instanceof Error ? error.message : 'Failed to send message');
+      }
     } finally {
+      abortRef.current = null;
       setLoading(false);
       setStreamingMessage('');
     }
   };
 
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
   const displayMessages = currentConversation ? [
     ...currentConversation.messages,
-    ...(streamingMessage ? [{ role: 'assistant', content: streamingMessage }] : [])
+    ...(streamingMessage ? [{ role: 'assistant' as const, content: streamingMessage }] : [])
   ] : [];
 
   const handleImportConversations = useCallback((imported: Conversation[]) => {
@@ -226,7 +255,7 @@ export default function Home() {
           <div className="max-w-6xl mx-auto">
             {displayMessages.map((message, index) => (
               <ChatMessage
-                key={`${currentConversationId}-${index}`}
+                key={`${currentConversationId}-${index}-${message.role}`}
                 role={message.role}
                 content={message.content}
               />
@@ -249,13 +278,23 @@ export default function Home() {
               className="input input-bordered flex-1"
               disabled={loading || !selectedModel}
             />
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading || !selectedModel || !input.trim()}
-            >
-              <PaperAirplaneIcon className="w-5 h-5" />
-            </button>
+            {loading ? (
+              <button
+                type="button"
+                onClick={handleStop}
+                className="btn btn-error"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={!selectedModel || !input.trim()}
+              >
+                <PaperAirplaneIcon className="w-5 h-5" />
+              </button>
+            )}
           </form>
         </footer>
       </div>

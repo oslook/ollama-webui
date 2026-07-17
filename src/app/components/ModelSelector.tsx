@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Model } from '../types';
 
 interface ModelSelectorProps {
@@ -12,37 +12,51 @@ export default function ModelSelector({ selectedModel, onModelSelect, baseUrl }:
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchModels = async () => {
-    try {
-      setError(null);
-      setLoading(true);
-      const response = await fetch(`${baseUrl}/api/tags`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch models');
-      }
-      const data = await response.json();
-      const modelList = data.models || [];
-      setModels(modelList);
+  // Keep the latest selection/callback in refs so the fetch effect can depend
+  // only on `baseUrl` without re-firing whenever the selection changes.
+  const selectedModelRef = useRef(selectedModel);
+  const onModelSelectRef = useRef(onModelSelect);
+  selectedModelRef.current = selectedModel;
+  onModelSelectRef.current = onModelSelect;
 
-      // 如果当前选择的模型不在列表中，选择第一个可用的模型
-      if (modelList.length > 0) {
-        const modelNames = modelList.map((m: Model) => m.name);
-        if (!modelNames.includes(selectedModel)) {
-          onModelSelect(modelList[0].name);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching models:', error);
-      setError('Failed to connect to Ollama server');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 在组件挂载和baseUrl变化时获取模型列表
+  // Fetch the model list on mount and whenever the server URL changes.
   useEffect(() => {
+    let cancelled = false;
+
+    const fetchModels = async () => {
+      try {
+        setError(null);
+        setLoading(true);
+        const response = await fetch(`${baseUrl}/api/tags`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch models');
+        }
+        const data = await response.json();
+        const modelList: Model[] = data.models || [];
+        if (cancelled) return;
+        setModels(modelList);
+
+        // If the current selection is not in the list, pick the first one.
+        if (modelList.length > 0) {
+          const modelNames = modelList.map((m) => m.name);
+          if (!modelNames.includes(selectedModelRef.current)) {
+            onModelSelectRef.current(modelList[0].name);
+          }
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Error fetching models:', error);
+        setError('Failed to connect to Ollama server');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
     fetchModels();
-  }, [baseUrl, selectedModel]);
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl]);
 
   if (loading) {
     return <div className="loading loading-spinner loading-sm"></div>;

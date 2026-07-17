@@ -1,11 +1,13 @@
 import ReactMarkdown from 'react-markdown';
+import type { ReactNode } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
 import { UserIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
+import type { Role } from '../types';
 
 interface ChatMessageProps {
-  role: string;
+  role: Role;
   content: string;
 }
 
@@ -28,7 +30,13 @@ export default function ChatMessage({ role, content }: ChatMessageProps) {
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              code({ node, inline, className, children, ...props }) {
+              code({ node, inline, className, children, ...props }: {
+                node?: unknown;
+                inline?: boolean;
+                className?: string;
+                children?: ReactNode;
+                [key: string]: unknown;
+              }) {
                 const match = /language-(\w+)/.exec(className || '');
                 if (inline) {
                   return (
